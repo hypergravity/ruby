@@ -10,6 +10,18 @@ from astropy.table import Table, Column
 from scipy.interpolate import interp1d
 
 
+def ezinterp(isoc,
+             restrictions=(('Mini', 0.01), ('logTe', 0.01), ('logg', 0.05)),
+             mode='linear',
+             # interp_config=(('logG', 'linear'), ('Gmag', 'linear')),
+             Mini='Mini'):
+    interp_config = [(colname, "linear") for colname in isoc.colnames]
+    new_isoc = isoc_interp(
+        isoc, restrictions=restrictions, doubling=1.0, mode="linear",
+        interp_config=interp_config, Mini=Mini)
+    return new_isoc
+
+
 def isoc_interp(isoc,
                 restrictions=(('logG', 0.01), ('M_act', 0.01)),
                 doubling=1.0,
@@ -62,7 +74,9 @@ def isoc_interp(isoc,
     if mode is 'linear':
         # linspace
         for i in range(n_row - 2):
-            M_interp = np.hstack((M_interp, np.linspace(M[i], M[i + 1], n_interp_points[i])[:-1]))
+            M_interp = np.hstack((M_interp, np.linspace(M[i], M[i + 1],
+                                                        n_interp_points[i])[
+                                            :-1]))
         # last interval is special
         i = n_row - 2
         M_interp = np.hstack(
@@ -72,7 +86,7 @@ def isoc_interp(isoc,
         for i in range(n_row - 2):
             M_interp = np.hstack(
                 (M_interp,
-                 np.random.rand(n_interp_points[i] - 1,) * M_diff[i] + M[i]))
+                 np.random.rand(n_interp_points[i] - 1, ) * M_diff[i] + M[i]))
         # last interval is special
         i = n_row - 2
         M_interp = np.hstack(
@@ -84,7 +98,9 @@ def isoc_interp(isoc,
     col_list = []
     for interp_col, kind in interp_config:
         assert interp_col in isoc.colnames
-        col_list.append(Column(interp1d(isoc[Mini], isoc[interp_col], kind=kind)(M_interp), interp_col))
+        col_list.append(
+            Column(interp1d(isoc[Mini], isoc[interp_col], kind=kind)(M_interp),
+                   interp_col))
 
     # return interpolated isochrone table
     return Table(col_list)
