@@ -182,6 +182,9 @@ class IsoGrid:
     Z = np.array([])
     t = np.array([])
 
+    u_feh = np.array([])
+    u_logt = np.array([])
+
     default_coord = ["_lgmass", "_feh", "_lgage", "_eep"]
 
     @property
@@ -191,7 +194,7 @@ class IsoGrid:
     @property
     def colnames(self):
         return self.data[0].colnames
-    
+
     def set_dt(self, dlogt=0.2):
         mapdict = dict()
         hdlogt = dlogt / 2.
@@ -209,7 +212,7 @@ class IsoGrid:
     def set_dfeh(self, dfeh=0.2):
         for i in range(self.niso):
             _dfeh = np.ones_like(self.data[i]["Mini"]) * dfeh
-            
+
             if "dfeh" in self.data[i].colnames:
                 self.data[i]["dfeh"] = _dfeh
             else:
@@ -219,9 +222,11 @@ class IsoGrid:
     def set_dm(self):
         for i in range(self.niso):
             _dm = np.ones_like(self.data[i]["Mini"])
-            _dm[1:-1] = (self.data[i]["Mini"][2:] - self.data[i]["Mini"][:-2]) / 2.
+            _dm[1:-1] = (self.data[i]["Mini"][2:] - self.data[i]["Mini"][
+                                                    :-2]) / 2.
             _dm[0] = 0.5 * (self.data[i]["Mini"][1] - self.data[i]["Mini"][0])
-            _dm[-1] = 0.5 * (self.data[i]["Mini"][-1] - self.data[i]["Mini"][-2])
+            _dm[-1] = 0.5 * (
+                self.data[i]["Mini"][-1] - self.data[i]["Mini"][-2])
 
             if "dm" in self.data[i].colnames:
                 self.data[i]["dm"] = _dm
@@ -340,19 +345,20 @@ class IsoGrid:
         return isoc_
 
     @staticmethod
-    def predict_from_chi2(combined_iso,
-                          var_colnames=["teff", "logg", "feh_ini"],
-                          tlf=np.array([5500, 2.5, 0.0]),
-                          tlf_err=np.array([100., 0.1, 0.1]),
-                          return_colnames=("Mini", "logt", "feh_ini"),
-                          q=(0.16, 0.50, 0.84)):
+    def predict_chi2(combined_iso,
+                     var_colnames=["teff", "logg", "feh_ini"],
+                     tlf=np.array([5500, 2.5, 0.0]),
+                     tlf_err=np.array([100., 0.1, 0.1]),
+                     return_colnames=("Mini", "logt", "feh_ini"),
+                     q=(0.16, 0.50, 0.84)):
         # 1. convert isochrone(table) into array
         sub_iso = np.array(combined_iso[var_colnames].to_pandas())
 
         # 2. calculate chi2
         chi2_values = 0
         for i_var in range(len(var_colnames)):
-            chi2_values += ((sub_iso[:, i_var] - tlf[i_var]) / tlf_err[i_var]) ** 2.
+            chi2_values += ((sub_iso[:, i_var] - tlf[i_var]) / tlf_err[
+                i_var]) ** 2.
         chi2_values *= -0.5
 
         # 3. chi2 --> PDF
@@ -362,24 +368,23 @@ class IsoGrid:
         result = np.zeros((len(q), len(return_colnames)), float)
         for i, colname in enumerate(return_colnames):
             # calculate unique values
-            u_y, inv_ind = np.unique(combined_iso[colname], return_inverse=True)
+            u_y, inv_ind = np.unique(
+                combined_iso[colname], return_inverse=True)
             # calclulate CDF
-            u_p_post = np.zeros(u_y.shape)
-            #u_p_post[inv_ind] = u_p_post[inv_ind] + p_post
-            for i, _ in enumerate(inv_ind):
-                if _ < len(u_p_post):
-                    u_p_post[_] += 0.5 * p_post[i]
-                    u_p_post[_ + 1] += 0.5 * p_post[i]
-                else:
-                    u_p_post[_] += p_post[i]
+            u_p_post = np.zeros((len(u_y) + 1,))
+            # u_p_post[inv_ind] = u_p_post[inv_ind] + p_post
+            for j, _ in enumerate(inv_ind):
+                u_p_post[_:_ + 2] += 0.5 * p_post[j]
 
-            result[:, i] = interp1d(np.cumsum(u_p_post)/np.sum(u_p_post), u_y)(q)
+            result[:, i] = interp1d(
+                np.cumsum(u_p_post) / np.sum(u_p_post), u_y)(q)
 
         return result
 
 
 def chi2(x, x0, err):
     return -0.5 * ((x - x0) / err) ** 2.
+
 
 # ######################
 # DEPRECATED
