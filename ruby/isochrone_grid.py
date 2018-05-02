@@ -30,10 +30,12 @@ import sys
 
 import numpy as np
 from astropy.io import fits
-from astropy.table import Table, vstack
+from astropy.table import Table, vstack, Column
 from ezpadova import parsec
 from joblib import Parallel, delayed
-from scipy.interpolate import PchipInterpolator
+from scipy.interpolate import PchipInterpolator, interp1d
+
+from .imf import salpeter
 
 Zsun = 0.0152  # this value from CMD website
 Zmin = 0.0001
@@ -183,8 +185,76 @@ class IsoGrid:
     default_coord = ["_lgmass", "_feh", "_lgage", "_eep"]
 
     @property
+    def niso(self):
+        return len(self.data)
+
+    @property
     def colnames(self):
         return self.data[0].colnames
+    
+    def set_dt(self, dlogt=0.2):
+        mapdict = dict()
+        hdlogt = dlogt / 2.
+        for logt in self.logt:
+            mapdict[logt] = 10. ** (logt + hdlogt) - 10. ** (logt - hdlogt)
+        for i in range(self.niso):
+            dt = np.ones_like(self.data[i]["Mini"]) * mapdict[self.logt[i]]
+
+            if "dt" in self.data[i].colnames:
+                self.data[i]["dt"] = dt
+            else:
+                self.data[i].add_column(Column(dt, "dt"))
+        return
+
+    def set_dfeh(self, dfeh=0.2):
+        for i in range(self.niso):
+            _dfeh = np.ones_like(self.data[i]["Mini"]) * dfeh
+            
+            if "dfeh" in self.data[i].colnames:
+                self.data[i]["dfeh"] = _dfeh
+            else:
+                self.data[i].add_column(Column(_dfeh, "dfeh"))
+        return
+
+    def set_dm(self):
+        for i in range(self.niso):
+            _dm = np.ones_like(self.data[i]["Mini"])
+            _dm[1:-1] = (self.data[i]["Mini"][2:] - self.data[i]["Mini"][:-2]) / 2.
+            _dm[0] = 0.5 * (self.data[i]["Mini"][1] - self.data[i]["Mini"][0])
+            _dm[-1] = 0.5 * (self.data[i]["Mini"][-1] - self.data[i]["Mini"][-2])
+
+            if "dm" in self.data[i].colnames:
+                self.data[i]["dm"] = _dm
+            else:
+                self.data[i].add_column(Column(_dm, "dm"))
+        return
+
+    def set_imf(self, func_imf=salpeter):
+        for i in range(self.niso):
+
+            imf = func_imf(self.data[i]["Mini"])
+            if "imf" in self.data[i].colnames:
+                self.data[i]["imf"] = imf
+            else:
+                self.data[i].add_column(Column(imf, "imf"))
+        return
+
+    def sub_cols(self, colnames=["Mini", "logTe"]):
+        for i in range(self.niso):
+            self.data[i] = self.data[i][colnames]
+        return
+
+    def sub_rows(self, cond=(("label", (0, 9)), ("Mini", (0., 12.)))):
+        for i in range(self.niso):
+            ind = np.ones_like(self.data[i]["Mini"], dtype=bool)
+            for colname, (lb, ub) in cond:
+                ind &= (self.data[i][colname] >= lb)
+                ind &= (self.data[i][colname] <= ub)
+            self.data[i] = self.data[i][ind]
+        return
+
+    def __getitem__(self, item):
+        return self.data[item]
 
     def __init__(self, isoc_list, isoc_feh, isoc_logt, Zsun=0.0152):
         self.data = np.array([Table(_.data) for _ in isoc_list])
@@ -269,9 +339,47 @@ class IsoGrid:
 
         return isoc_
 
-    def sub_col(self, colnames=("Zini", "Age")):
-        pass
+    @staticmethod
+    def predict_from_chi2(combined_iso,
+                          var_colnames=["teff", "logg", "feh_ini"],
+                          tlf=np.array([5500, 2.5, 0.0]),
+                          tlf_err=np.array([100., 0.1, 0.1]),
+                          return_colnames=("Mini", "logt", "feh_ini"),
+                          q=(0.16, 0.50, 0.84)):
+        # 1. convert isochrone(table) into array
+        sub_iso = np.array(combined_iso[var_colnames].to_pandas())
 
+        # 2. calculate chi2
+        chi2_values = 0
+        for i_var in range(len(var_colnames)):
+            chi2_values += ((sub_iso[:, i_var] - tlf[i_var]) / tlf_err[i_var]) ** 2.
+        chi2_values *= -0.5
+
+        # 3. chi2 --> PDF
+        p_post = np.exp(chi2_values) * combined_iso["w"]
+
+        # 4. PDF --> CDF (for each return colname)
+        result = np.zeros((len(q), len(return_colnames)), float)
+        for i, colname in enumerate(return_colnames):
+            # calculate unique values
+            u_y, inv_ind = np.unique(combined_iso[colname], return_inverse=True)
+            # calclulate CDF
+            u_p_post = np.zeros(u_y.shape)
+            #u_p_post[inv_ind] = u_p_post[inv_ind] + p_post
+            for i, _ in enumerate(inv_ind):
+                if _ < len(u_p_post):
+                    u_p_post[_] += 0.5 * p_post[i]
+                    u_p_post[_ + 1] += 0.5 * p_post[i]
+                else:
+                    u_p_post[_] += p_post[i]
+
+            result[:, i] = interp1d(np.cumsum(u_p_post)/np.sum(u_p_post), u_y)(q)
+
+        return result
+
+
+def chi2(x, x0, err):
+    return -0.5 * ((x - x0) / err) ** 2.
 
 # ######################
 # DEPRECATED
