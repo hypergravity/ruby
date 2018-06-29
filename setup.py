@@ -22,7 +22,7 @@ if __name__ == '__main__':
             "Topic :: Scientific/Engineering :: Physics"],
         package_dir={'ruby': 'ruby'},
         packages=['ruby', ],
-        package_data={"ruby": ["ruby/data/*", "ruby/script/*"]},
+        package_data={"ruby": ["data/*", "script/*"]},
         include_package_data=True,
         requires=['numpy', 'scipy', 'matplotlib', 'astropy', 'joblib']
     )

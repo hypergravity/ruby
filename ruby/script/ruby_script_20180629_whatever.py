@@ -7,7 +7,7 @@ Created on Thu Apr 26 13:35:57 2018
 """
 
 # %%
-%pylab qt5
+#%pylab qt5
 import numpy as np
 from ruby import get_isochrone_grid, IsoGrid
 # from ruby import isoc_interp, ezinterp
