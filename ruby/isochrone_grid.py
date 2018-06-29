@@ -426,6 +426,26 @@ class IsoGrid:
         return
 
 
+def combine_grids(*args):
+    """
+
+    :param args:
+        isochrone grids, IG objects
+    :return:
+    """
+    grid0 = copy.copy(args[0])
+    colnames = grid0.colnames
+    for grid in args[1:]:
+        # for each minor grids
+        for iiso in range(grid.niso):
+            # for each isochrone
+            for colname in grid.data[iiso].colnames:
+                # for each column
+                if colname not in colnames:
+                    grid0.data[iiso].add_column(grid[iiso][colname])
+    return grid0
+
+
 def chi2(x, x0, err):
     return -0.5 * ((x - x0) / err) ** 2.
 
