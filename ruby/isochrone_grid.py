@@ -32,7 +32,7 @@ import numpy as np
 from astropy.io import fits
 from astropy.table import Table, vstack, Column
 from ezpadova import parsec
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, dump, load
 from scipy.interpolate import PchipInterpolator, interp1d
 
 from .imf import salpeter
@@ -173,6 +173,15 @@ def get_isochrone_grid(grid_feh, grid_logt, model="parsec12s", phot="sloan",
     return IsoGrid(isoc_list, feh, logt, Zsun)
 
 
+def dump_ig(ig, fp):
+    dump((ig.data, ig.feh, ig.logt, ig.Zsun), fp)
+    return
+
+
+def load_ig(fp):
+    return IsoGrid(*load(fp))
+
+
 class IsoGrid:
     """ a set of isochrones """
 
@@ -181,6 +190,7 @@ class IsoGrid:
     logt = np.array([])
     Z = np.array([])
     t = np.array([])
+    Zsun = 0.0152
 
     u_feh = np.array([])
     u_logt = np.array([])
@@ -262,7 +272,10 @@ class IsoGrid:
         return self.data[item]
 
     def __init__(self, isoc_list, isoc_feh, isoc_logt, Zsun=0.0152):
-        self.data = np.array([Table(_.data) for _ in isoc_list])
+        try:
+            self.data = np.array([Table(_.data) for _ in isoc_list])
+        except AttributeError:
+            self.data = np.array([Table(_.columns) for _ in isoc_list])
         self.feh = np.array(isoc_feh)
         self.logt = np.array(isoc_logt)
         self.Zsun = Zsun
@@ -345,12 +358,12 @@ class IsoGrid:
         return isoc_
 
     @staticmethod
-    def predict_chi2(combined_iso,
-                     var_colnames=["teff", "logg", "feh_ini"],
-                     tlf=np.array([5500, 2.5, 0.0]),
-                     tlf_err=np.array([100., 0.1, 0.1]),
-                     return_colnames=("Mini", "logt", "feh_ini"),
-                     q=(0.16, 0.50, 0.84)):
+    def predict_from_chi2(combined_iso,
+                          var_colnames=["teff", "logg", "feh_ini"],
+                          tlf=np.array([5500, 2.5, 0.0]),
+                          tlf_err=np.array([100., 0.1, 0.1]),
+                          return_colnames=("Mini", "logt", "feh_ini"),
+                          q=(0.16, 0.50, 0.84)):
         # 1. convert isochrone(table) into array
         sub_iso = np.array(combined_iso[var_colnames].to_pandas())
 
@@ -371,7 +384,8 @@ class IsoGrid:
             u_y, inv_ind = np.unique(
                 combined_iso[colname], return_inverse=True)
             # calclulate CDF
-            u_p_post = np.zeros((len(u_y) + 1,))
+            u_y = np.append(u_y, u_y[-1] * 2 - u_y[-2])
+            u_p_post = np.zeros_like(u_y, float)
             # u_p_post[inv_ind] = u_p_post[inv_ind] + p_post
             for j, _ in enumerate(inv_ind):
                 u_p_post[_:_ + 2] += 0.5 * p_post[j]
@@ -380,6 +394,36 @@ class IsoGrid:
                 np.cumsum(u_p_post) / np.sum(u_p_post), u_y)(q)
 
         return result
+
+    def interp_mini(self, logt=9.0, feh=0.0, mini=1.0,
+                    return_colnames=("Mini", "logt", "logTe", "logg")):
+        """ to return interpolated values for a given isochrone(logt, feh)
+
+        :param logt:
+            log age
+        :param feh:
+            [Fe/H]
+        :param mini:
+            initial mass
+        :param return_colnames:
+            colnames of the returned values
+        :return:
+        """
+        iso = self.get_iso(logt=logt, feh=feh)
+
+        result = np.array([])
+        for colname in return_colnames:
+            I = interp1d(iso["Mini"], iso[colname], bounds_error=False,
+                         fill_value=np.nan)
+            result = np.append(result, np.float(I(mini)))
+
+        return result
+
+    def absorb(self, ig, colnames=("u", "g")):
+        for i in range(self.niso):
+            for colname in colnames:
+                self.data[i].add_column(ig.data[i][colname])
+        return
 
 
 def chi2(x, x0, err):
