@@ -4,7 +4,7 @@ from distutils.core import setup
 if __name__ == '__main__':
     setup(
         name='ruby',
-        version='0.1.4',
+        version='0.1.5',
         author='Bo Zhang',
         author_email='bzhang@mpia.de',
         # py_modules=['bopy','spec','core'],
@@ -24,5 +24,5 @@ if __name__ == '__main__':
         packages=['ruby', ],
         package_data={"ruby": ["data/*", "script/*"]},
         include_package_data=True,
-        requires=['numpy', 'scipy', 'matplotlib', 'astropy', 'joblib']
+        requires=['numpy', 'scipy', 'matplotlib', 'astropy', 'joblib', 'emcee']
     )
