@@ -10,6 +10,7 @@ import emcee
 # %pylab qt5
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.interpolate import interp1d
 from scipy.stats import skewtest, skew, anderson
 
 """
@@ -40,6 +41,26 @@ def dmod_to_parallax(m, M=0.):
 
     """
     return 10. ** (2 - 0.2 * (m - M))
+
+
+def grid_to_pdf(combined_iso, p_post, colnames=["teff", "logg"],
+                q=(16, 50, 84)):
+    # n_quantile x n_colnames
+    result = np.zeros((len(q), len(colnames)), float)
+    for i, colname in enumerate(colnames):
+        # calculate unique values
+        u_y, inv_ind = np.unique(
+            combined_iso[colname], return_inverse=True)
+        # calclulate CDF
+        u_y = np.append(u_y, u_y[-1] * 2 - u_y[-2])
+        u_p_post = np.zeros_like(u_y, float)
+        # u_p_post[inv_ind] = u_p_post[inv_ind] + p_post
+        for j, _ in enumerate(inv_ind):
+            u_p_post[_:_ + 2] += 0.5 * p_post[j]
+
+        result[:, i] = interp1d(np.cumsum(u_p_post) / np.sum(u_p_post), u_y)(q)
+
+    return result
 
 
 # %%
