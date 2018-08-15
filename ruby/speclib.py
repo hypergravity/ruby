@@ -86,8 +86,6 @@ def test():
     model_paths_fmt = "/projects/gaia/data/lamost_speclib_dr5_v1_test/spec*.dump"
     model_paths = glob.glob(model_paths_fmt)
 
-
-
     # error = np.random.rand(1900)*0.1
     # from joblib import dump, load
     error_path = "/projects/gaia/data/lamost_speclib_dr5_v1_test/error.dump"
