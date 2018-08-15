@@ -33,7 +33,7 @@ from astropy.io import fits
 from astropy.table import Table, vstack, Column
 from ezpadova import parsec
 from joblib import Parallel, delayed, dump, load
-from scipy.interpolate import PchipInterpolator, interp1d
+from scipy.interpolate import PchipInterpolator, interp1d, interp2d
 
 from .imf import salpeter
 
@@ -205,6 +205,68 @@ class IsoGrid:
     def colnames(self):
         return self.data[0].colnames
 
+    def interp(self, ccl=0.1, feh=0.01, logt=9.01,
+               interp_colnames=["logTe", "logg"]):
+        # assert logt and feh range
+        if feh <= self.grid_feh.min() or feh >= self.grid_feh.max() or \
+                logt <= self.grid_logt.min() or logt >= self.grid_logt.max():
+            return np.ones((len(interp_colnames),)) * np.nan
+        # ind_isoc = (self.logt>=logt-step_logt) & (self.logt<=logt+step_logt)\
+        #            & (self.feh>=feh-step_feh) & (self.feh<=feh+step_feh)
+        # sub_isoc = np.where(ind_isoc)[0]
+        # |-> this induces a bug!!!
+
+        # find logt and feh interval
+        for i_feh in range(len(self.grid_feh) - 1):
+            if self.grid_feh[i_feh] <= feh <= self.grid_feh[i_feh + 1]:
+                break
+        for i_logt in range(len(self.grid_logt) - 1):
+            if self.grid_logt[i_logt] <= logt <= self.grid_logt[i_logt + 1]:
+                break
+
+        # get 4 neighbouring isochrones
+        sub_isoc = [np.argmin((self.feh - self.grid_feh[i_feh]) ** 2
+                              + (self.logt - self.grid_logt[i_logt]) ** 2),
+                    np.argmin((self.feh - self.grid_feh[i_feh]) ** 2
+                              + (self.logt - self.grid_logt[i_logt + 1]) ** 2),
+                    np.argmin((self.feh - self.grid_feh[i_feh + 1]) ** 2
+                              + (self.logt - self.grid_logt[i_logt]) ** 2),
+                    np.argmin((self.feh - self.grid_feh[i_feh + 1]) ** 2
+                              + (self.logt - self.grid_logt[i_logt + 1]) ** 2)]
+
+        # print(np.sum(ind_isoc))
+        coord_logt = self.logt[sub_isoc]
+        coord_feh = self.feh[sub_isoc]
+
+        # interpolate each quantity [ timeit 1.55 ms / iter 16 isochrone ]
+        qs = np.zeros((len(interp_colnames),))
+        for i_colname, colname in enumerate(interp_colnames):
+            if colname == "logt":
+                qs[i_colname] = logt
+            if colname == "feh":
+                qs[i_colname] = feh
+            else:
+                # timeit 0.6 ms / iter, 16 isochrone
+                if np.max([self[i_isoc]["fake_ccl_rescaled"][0] for i_isoc in
+                           sub_isoc]) \
+                        <= ccl <= np.min(
+                    [self[i_isoc]["fake_ccl_rescaled"][-1] for i_isoc in
+                     sub_isoc]):
+                    q_interp = np.zeros((len(sub_isoc),))
+                    for i_interp, i_isoc in enumerate(sub_isoc):
+                        isoc = self[i_isoc]
+                        q_interp[i_interp] = np.float(interp1d(
+                            isoc["fake_ccl_rescaled"], isoc[colname],
+                            bounds_error=False, fill_value=np.nan,
+                            kind="linear")(ccl))
+                    qs[i_colname] = interp2d(
+                        coord_logt, coord_feh, q_interp, bounds_error=False,
+                        fill_value=np.nan, kind="linear")(logt, feh)
+                else:
+                    qs[i_colname] = np.nan
+
+        return qs
+
     def set_dt(self, dlogt=0.2):
         mapdict = dict()
         hdlogt = dlogt / 2.
@@ -235,8 +297,7 @@ class IsoGrid:
             _dm[1:-1] = (self.data[i]["Mini"][2:] - self.data[i]["Mini"][
                                                     :-2]) / 2.
             _dm[0] = 0.5 * (self.data[i]["Mini"][1] - self.data[i]["Mini"][0])
-            _dm[-1] = 0.5 * (
-                self.data[i]["Mini"][-1] - self.data[i]["Mini"][-2])
+            _dm[-1] = 0.5 * (self.data[i]["Mini"][-1] - self.data[i]["Mini"][-2])
 
             if "dm" in self.data[i].colnames:
                 self.data[i]["dm"] = _dm
